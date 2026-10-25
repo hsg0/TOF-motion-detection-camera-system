@@ -27,24 +27,46 @@ oct-25/
     spi-slave/
 ```
 
-## How the pieces fit
+## How it is connected
 
-```text
-Pi 5  ---- USB ----  Uno Q Linux MPU ---- serial bridge ---- STM32U585
-  |                                                      |
-  | camera + NPU                                         | Qwiic (Wire1)
-  |                                                      |   IMU + magnetometer
-  | USB                                                  |   barometer
-  |                                                      |   OLED
-  cellular modem                                         |
-                                                         | Serial1
-                                                         |   GPS
-                                                         |
-                                                         | JSPI
-                                                         |   Pico W ---- I2C ---- VL53L0X
+Three boards. The Pi watches. The Uno Q reads most of the sensors. The Pico only reads distance and passes it to the Uno Q. Nothing on the Pico is wired to the Pi.
+
+![Wiring poster](wiring-diagram.jpg)
+
+The picture is a quick map. Three labels on it are wrong, so follow this list if they disagree:
+
+- The GPS is a GT-U7 (a u-blox 7), not a NEO-M8.
+- Do not connect the GPS RX wire to D1. Only the GPS TX wire goes to D0. Leave RX and PPS off.
+- Power is the Pi's 5 V 5 A USB-C supply. There is no Geekworm converter in this stack.
+
+```mermaid
+flowchart TB
+  psu["5 V 5 A USB-C supply"] --> pi["Raspberry Pi 5"]
+  cam["Sony IMX500 camera"] -->|ribbon cable on CSI| pi
+  hat["Hailo-10H AI HAT"] -->|sits on the Pi header| pi
+  modem["SIM7600G-H modem"] -->|USB| pi
+  pi -->|USB cable| uno["Arduino Uno Q"]
+
+  uno -->|Qwiic plug, Wire1| qwiic["One shared I2C cable chain"]
+  qwiic --> imu["LSM6DSOX and LIS3MDL"]
+  qwiic --> baro["BME280 barometer"]
+  qwiic --> oled["Small OLED screen"]
+
+  gps["GT-U7 GPS"] -->|"TX to D0, 5 V, and ground"| uno
+  uno -->|"JSPI header plus D10"| pico["Raspberry Pi Pico W"]
+  tof["VL53L0X distance sensor"] -->|"SDA GP0, SCL GP1, 3.3 V, ground"| pico
 ```
 
-The Pi is the vision computer and the dashboard. The Uno Q is the sensor board. The Pico only reads the distance sensor and hands that reading to the Uno Q.
+Read the arrows as wires or plugs:
+
+1. Power goes into the Pi. The Pi feeds the Uno Q through the USB cable. The Uno Q feeds 5 V to the Pico on the JSPI header. The Pico makes 3.3 V for the distance sensor.
+2. The camera and the Hailo board plug into the Pi only.
+3. The modem plugs into a Pi USB port only.
+4. The motion sensor, compass, barometer, and OLED share one Qwiic plug on the Uno Q. They are chained, not four separate cables back to the board.
+5. The GPS uses three wires to the Uno Q: data out to D0, 5 V, and ground. Its data-in wire stays off.
+6. The Pico plugs into the Uno Q JSPI header. The distance sensor plugs into the Pico, pins GP0 and GP1.
+
+The pin tables are in [WIRING.md](WIRING.md).
 
 ## Raspberry Pi 5
 
@@ -184,5 +206,4 @@ There is no TF-Luna lidar on this Pico. The firmware accepts a range only when t
 | Distance sensor and SPI reply | Pico W |
 | Cellular data session | Pi, ModemManager and NetworkManager |
 
-Source for the Pi programs is `oct-24/watcher.py` and `oct-24/unoq_bridge.py` in this project. The copies that the Pi runs are under the Desktop `scripts/oct-24` folder on that machine. The Uno Q and Pico sources are in the flight-controller tree: `FLIGHT-CONTROLLER/UNO-Q/MCU/motorController` and `FLIGHT-CONTROLLER/UNO-Q/MCU/PICO-1`.
-# TOF-motion-detection-camera-system
+The programs in the folders next to this file are the copies to keep. The Pi dashboard is `raspberry-pi-5/dashboard/watcher.py`. The Pi bridge is `raspberry-pi-5/unoq-bridge/unoq_bridge.py`. The Uno Q sketch is under `uno-q/mcu/`. The Pico program is under `pico-w/`.
