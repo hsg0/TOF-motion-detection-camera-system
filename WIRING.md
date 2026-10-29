@@ -32,6 +32,51 @@ flowchart TB
 
 The Pi does not wire to the sensors. It reaches the Uno Q over USB. The Pico does not wire to the Pi. It answers the Uno Q on the JSPI header.
 
+## What runs where
+
+The Hailo board is an NPU, a chip that runs one neural network. It is not the Pi's GPU. The Pi CPU captures the picture, draws the boxes, serves the web page, and today also runs the language models.
+
+| Work | Chip | Model | How it is used |
+|---|---|---|---|
+| Person and object detection | Hailo-10H on the AI HAT+ 2 | YOLOv11m, file `yolov11m_h10.hef` | `watcher.py` resizes each camera frame to 640×640 and sends it to `/dev/hailo0`. The HAT returns the boxes. The CPU draws them. |
+| Vision-language model, installed now | Pi 5 CPU, through Ollama | `moondream:1.8b` | Answers a question about a camera frame. Ollama listens on port 11434. This is not part of the live detector. |
+| Text language model, installed now | Pi 5 CPU, through Ollama | `qwen2.5:1.5b` | Answers text questions. Same Ollama service. This is not part of the live detector. |
+| Dashboard, mail, telemetry bridge | Pi 5 CPU | none | `watcher.py` and `unoq_bridge.py` |
+| IMU, barometer, GPS, OLED, Pico poll | Uno Q STM32 | none | `motorController` sketch |
+| Distance | Pico W | none | VL53L0X driver |
+
+The live dashboard uses only the Hailo detector. A person is reported when YOLOv11m sees a person and the Pico distance stays at or inside 30 cm for 2 seconds. Moondream and Qwen are installed for asking the camera or a text model a question. They do not decide the alert.
+
+### Why the language models are on the CPU
+
+The NPU cannot run an Ollama model. Ollama's `moondream:1.8b` and `qwen2.5:1.5b` are ordinary CPU models. The Hailo-10H only runs a model that Hailo has compiled into its own `.hef` file.
+
+YOLOv11m is on the HAT because that `.hef` came inside the Hailo apt package. The matching language-model files were never installed. The Hailo download site blocked the headless download, so Ollama was installed as the working fallback. Moondream itself has no Hailo build.
+
+### Models this HAT can run
+
+The on-chip firmware is version **5.1.1**. A model compiled for a newer Hailo release will not load until the HAT firmware and the Hailo software are updated together. The pair to use on this board is:
+
+| Job | Model | Hailo name |
+|---|---|---|
+| Text model | Qwen2.5-1.5B-Instruct | `qwen2.5-instruct:1.5b` |
+| Vision model | Qwen2-VL-2B-Instruct | `Qwen2-VL-2B-Instruct.hef` |
+
+Use the **5.1.1** compile of Qwen2-VL. Hailo later rebuilt that same model for 5.2 and newer, and that newer file is about 1 GB larger. It does not load on 5.1.1 firmware.
+
+These other text models are also in the 5.1.1 set, and they also run on this HAT. They are not the pair to use with the vision model:
+
+| Model | What it is |
+|---|---|
+| `qwen2:1.5b` | General text model |
+| `qwen2.5-coder:1.5b` | Code model |
+| `deepseek_r1_distill_qwen:1.5b` | Reasoning model |
+| `llama3.2:3b` | General text model |
+
+Those Hailo language models are served by Hailo's own program, `hailo-ollama`, on port 8000. That is a different program from the Ollama install on port 11434.
+
+Speech models compiled for this chip (Whisper Tiny, Base, and Small) and a later video model (Qwen3-VL-2B) need Hailo software 5.2.0 or newer. They are not for this firmware.
+
 ## Raspberry Pi 5
 
 | From | To | Connection |
